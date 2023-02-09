@@ -1,0 +1,71 @@
+---
+title: "Projet1"
+output: html_document
+date: "2023-02-09"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#Installation des packages et librairies:
+```{r}
+if (!require("BiocManager"))
+    install.packages("BiocManager")
+BiocManager::install('GenomicDataCommons')
+library(cBioPortalData)
+library(AnVIL)
+library(ggplot2)
+```
+
+#Visualisation des données :
+```{r}
+GenomicDataCommons::status()
+cbio <- cBioPortal()
+mols <- molecularProfiles(cbio, "luad_tcga")
+mols #Affiche tous les types de données et leus caractéristiques pour l'étude sur luad
+```
+#Importation des données moléculaires:
+```{r}
+#Sélection du gèneID
+resp <- cbio$getGeneUsingGET("EIF2AK4")
+resp <- httr::content(resp)
+gene = resp$entrezGeneId
+
+#Sélection des échantillons pour LUAD:
+sample <- allSamples(cbio, "luad_tcga")
+
+#Importation des données CNA:
+dataCNA <- molecularData(cbio, molecularProfileId = "luad_tcga_gistic", entrezGeneIds = gene, sampleIds = sample$sampleId)
+dataCNA <- dataCNA$luad_tcga_gistic
+
+#Importation des données mRNA expression (Z-score):
+dataMRNA <- molecularData(cbio, molecularProfileId = "luad_tcga_mrna_median_all_sample_Zscores", entrezGeneIds = gene, sampleIds = dataCNA$sampleId)
+dataMRNA <- dataMRNA$luad_tcga_mrna_median_all_sample_Zscores
+```
+
+#Traitement des données:
+```{r}
+
+dataCNA <- subset(dataCNA, dataCNA$patientId %in% dataMRNA$patientId) #Je fais un intersect car taille des données diff
+
+#selection des valeurs dans chaque dataframe
+mrna <- dataMRNA$value
+score <- dataCNA$value
+
+#Retraitement des données CNA:
+newScore <- replace(score, 0, "Diploid")
+newScore <- replace(newScore, -2, "Deep Deletion")
+newScore <- replace(newScore, -1, "Shallow Deletion")
+newScore <- replace(newScore, 1, "Gain")
+newScore <- replace(newScore, 2, "Amplification")
+
+#Plot:
+df <- data.frame(CNA=newScore, Zscore=mrna)
+p<-ggplot(data=df, aes(x=CNA, y=Zscore)) +
+  geom_boxplot() +
+  geom_jitter()
+p
+
+```
+/!\ Problème: Pour les donnée mRNA quelque soit le type de données sélectionnées, pour toutes les études luad on ne retrouve que 32 patients alors que pour les CNA il y en a 516 avant intesect. Bizarre...pas possible de reproduire le graphique de cBioportail.
