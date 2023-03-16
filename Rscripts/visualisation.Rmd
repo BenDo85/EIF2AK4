@@ -1,71 +1,111 @@
 ---
 title: "Projet1"
-output: html_document
+output:
+  pdf_document: default
+  html_document: default
 date: "2023-02-09"
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+tinytex::install_tinytex()
 ```
 
-#Installation des packages et librairies:
+# Installation des packages et librairies:
+
 ```{r}
 if (!require("BiocManager"))
     install.packages("BiocManager")
 BiocManager::install('GenomicDataCommons')
+install.packages("survival")
 library(cBioPortalData)
-library(AnVIL)
+library(ggsurvfit)
 library(ggplot2)
+library(survival)
 ```
 
-#Visualisation des données :
+Ce markdown se base sur le didacticiel suivant:<https://www.emilyzabor.com/tutorials/survival_analysis_in_r_tutorial.html#The_Cox_regression_model> La documentation de l'api est ici: <https://bioconductor.org/packages/devel/bioc/vignettes/cBioPortalData/inst/doc/cBioPortalRClient.html>
+
+# Importation des données d'intéréts :
+
 ```{r}
 GenomicDataCommons::status()
-cbio <- cBioPortal()
-mols <- molecularProfiles(cbio, "luad_tcga")
-mols #Affiche tous les types de données et leus caractéristiques pour l'étude sur luad
+cbio <- cBioPortal() #création d'un objet cbioportail
 ```
-#Importation des données moléculaires:
+
+## Données moléculaires:
+
+```{r}
+mols <- molecularProfiles(cbio, "luad_tcga") #je charge les données moléculaires de l'étude tcga pour le luad cancer
+mols #Affiche tous les types de données et leus caractéristiques pour l'étude sur luad
+sample <- allSamples(cbio, "luad_tcga") #sélection de tous les échantillons
+```
+
+## Données cliniques:
+
+```{r}
+clinical <- clinicalData(cbio, "luad_tcga")
+clinical 
+```
+
+# Importation des données liées au gène EIF2AK4:
+
 ```{r}
 #Sélection du gèneID
 resp <- cbio$getGeneUsingGET("EIF2AK4")
 resp <- httr::content(resp)
 gene = resp$entrezGeneId
 
-#Sélection des échantillons pour LUAD:
-sample <- allSamples(cbio, "luad_tcga")
-
-#Importation des données CNA:
+#Importation des scores CNA calculés par GISTIC:
 dataCNA <- molecularData(cbio, molecularProfileId = "luad_tcga_gistic", entrezGeneIds = gene, sampleIds = sample$sampleId)
 dataCNA <- dataCNA$luad_tcga_gistic
-
-#Importation des données mRNA expression (Z-score):
-dataMRNA <- molecularData(cbio, molecularProfileId = "luad_tcga_mrna_median_all_sample_Zscores", entrezGeneIds = gene, sampleIds = dataCNA$sampleId)
-dataMRNA <- dataMRNA$luad_tcga_mrna_median_all_sample_Zscores
+dataCNA
 ```
 
-#Traitement des données:
+# Traitement des données:
+
+## Normalisation et pré-traitement:
+
 ```{r}
+#Intersect pour récupérer les patients en communs dans chaque dataset (car lar taille des échantillon diffèrent de quelques patients)
+data <- subset(clinical, clinical$patientId %in% dataCNA$patientId)
 
-dataCNA <- subset(dataCNA, dataCNA$patientId %in% dataMRNA$patientId) #Je fais un intersect car taille des données diff
+#On récupère la durée de survie (supposée)
+duration <- as.numeric(data$OS_MONTHS)
 
-#selection des valeurs dans chaque dataframe
-mrna <- dataMRNA$value
-score <- dataCNA$value
+#On récupère l'état de survie (supposé)
+surv <- data$OS_STATUS
+surv <- recode(surv, `0:LIVING` = 0, `1:DECEASED` = 1) #On recode pour avoir données numériques
 
-#Retraitement des données CNA:
-newScore <- replace(score, 0, "Diploid")
-newScore <- replace(newScore, -2, "Deep Deletion")
-newScore <- replace(newScore, -1, "Shallow Deletion")
-newScore <- replace(newScore, 1, "Gain")
-newScore <- replace(newScore, 2, "Amplification")
+#On récupère le score des cna et on recode
+cna <- dataCNA$value
+cna <- recode(cna,
+              "-2" = "Deep Deletion",
+              "-1" = "Shallow Deletion",
+              "0" = "Diploid",
+              "1" = "Gain",
+              "2" = "Amplification")
 
-#Plot:
-df <- data.frame(CNA=newScore, Zscore=mrna)
-p<-ggplot(data=df, aes(x=CNA, y=Zscore)) +
-  geom_boxplot() +
-  geom_jitter()
-p
-
+#On créé une dataframe regroupant ces trois variables: attention on a encore perdue quelques patients
+df_surv <- data.frame(duration[0:516], surv[0:516], cna)
+names(df_surv) <- c('Durée', 'Survie', 'CNA')
+head(df_surv)
 ```
-/!\ Problème: Pour les donnée mRNA quelque soit le type de données sélectionnées, pour toutes les études luad on ne retrouve que 32 patients alors que pour les CNA il y en a 516 avant intesect. Bizarre...pas possible de reproduire le graphique de cBioportail.
+
+## Régression de Cox
+
+```{r}
+#Création d'un objet survie
+Surv(df_surv$Durée, df_surv$Survie)
+s <- coxph(Surv(Durée, Survie) ~ CNA, data = df_surv) #proba modèle de cox
+
+#Représentation graphique
+survfit2(Surv(Durée, Survie) ~ CNA, data = df_surv) %>% 
+  ggsurvfit() +
+  labs(
+    x = "Jours",
+    y = "Survie: 0=LIVING, 1:DECEASED"
+  )
+```
+
+/! Problème: Pour les donnée mRNA quelque soit le type de données sélectionnées, pour toutes les études luad on ne retrouve que 32 patients alors que pour les CNA il y en a 516 avant intesect. Bizarre...pas possible de reproduire le graphique de cBioportail.
