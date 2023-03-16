@@ -8,44 +8,60 @@ date: "2023-02-09"
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-tinytex::install_tinytex()
+tinytex::install_tinytex(force = TRUE)
 ```
 
 # Installation des packages et librairies:
 
-```{r}
+```{r, echo=T, results='hide', message=FALSE}
 if (!require("BiocManager"))
     install.packages("BiocManager")
-BiocManager::install('GenomicDataCommons')
-install.packages("survival")
+
+if (!require("GenomicDataCommons"))
+    BiocManager::install('GenomicDataCommons')
+library(GenomicDataCommons)
+
+if (!require("cBioPortalData"))
+    BiocManager::install("cBioPortalData")
 library(cBioPortalData)
+
+if (!require("ggsurvfit"))
+    install.packages("ggsurvfit")
 library(ggsurvfit)
+
+if (!require("ggplot2"))
+    install.packages("ggplot2")
 library(ggplot2)
+
+if (!require("survival"))
+    install.packages("survival")
 library(survival)
 ```
 
-Ce markdown se base sur le didacticiel suivant:<https://www.emilyzabor.com/tutorials/survival_analysis_in_r_tutorial.html#The_Cox_regression_model> La documentation de l'api est ici: <https://bioconductor.org/packages/devel/bioc/vignettes/cBioPortalData/inst/doc/cBioPortalRClient.html>
+Ce markdown se base sur le didacticiel suivant:<https://www.emilyzabor.com/tutorials/survival_analysis_in_r_tutorial.html#The_Cox_regression_model>
 
-# Importation des données d'intéréts :
+La documentation de l'api est ici: <https://bioconductor.org/packages/devel/bioc/vignettes/cBioPortalData/inst/doc/cBioPortalRClient.html>
 
-```{r}
-GenomicDataCommons::status()
-cbio <- cBioPortal() #création d'un objet cbioportail
+## Importation des données d'intéréts :
+
+```{r, echo=T, results='hide', message=FALSE}
+GenomicDataCommons::status() # Permet de vérifier l'accès au serveur cBioPortal
+cbio <- cBioPortal() # Création d'un objet cbioportail
 ```
 
 ## Données moléculaires:
 
 ```{r}
+sample <- allSamples(cbio, "luad_tcga") #sélection de tous les échantillons
 mols <- molecularProfiles(cbio, "luad_tcga") #je charge les données moléculaires de l'étude tcga pour le luad cancer
 mols #Affiche tous les types de données et leus caractéristiques pour l'étude sur luad
-sample <- allSamples(cbio, "luad_tcga") #sélection de tous les échantillons
 ```
 
 ## Données cliniques:
 
 ```{r}
 clinical <- clinicalData(cbio, "luad_tcga")
-clinical 
+clinical
 ```
 
 # Importation des données liées au gène EIF2AK4:
@@ -109,3 +125,39 @@ survfit2(Surv(Durée, Survie) ~ CNA, data = df_surv) %>%
 ```
 
 /! Problème: Pour les donnée mRNA quelque soit le type de données sélectionnées, pour toutes les études luad on ne retrouve que 32 patients alors que pour les CNA il y en a 516 avant intesect. Bizarre...pas possible de reproduire le graphique de cBioportail.
+
+## Question-réponse
+
+### Quelle est la différence entre les Copy Number Variation (CNV) et les Copy Number Alteration (CNA)?
+
+Ce sont deux termes souvent utilisés de manière interchangeable dans la littérature scientifique. Ils décrivent un polymorphisme du nombre de copies pour un segment du génome, on se concentre souvent sur une région génomique.
+
+Néanmoins, avec une définition plus précise, ces termes s'opposent. Les CNVs ont lieu dans une lignée germinale alors que les CNAs ont lieu dans une lignée somatique, dont tumorale.
+
+Source : <https://www.ncbi.nlm.nih.gov/pmc/articles/PMC2648736/>
+
+### Comment ont-ils pu détecter la présence de CNA à partir d'une puce à ADN?
+
+Les chercheurs de TCGA ont utilisé la puce à ADN, Affymetrix SNP 6.0, qui est équipée d'un total de 1 852 600 sondes de longueur allant de 200 à 1 100 pb.
+
+906 600 de ces sondes sont spécialisées pour la détection de SNPs d'intérêt.
+
+Pour les 946 000 marqueurs restants, cette puce à la particularité d'être équipée de sondes, qui elles, se concentrent sur la détection de CNAs. On en retrouve de différents types : 744 000 qui sont espacés de manière régulière sur le génome 202 000 se basent sur des régions connues pour en héberger
+
+Ils comparent ensuite les fréquences observées par rapport à une référence pour pouvoir normaliser le signal.
+
+Source : <http://tools.thermofisher.com/content/sfs/brochures/genomewide_snp6_datasheet.pdf> <https://www.biostars.org/p/426405/>
+
+### Comment, à partir de ces données brutes, estiment-ils le nombre de copies?
+
+Ils ont d'abord utilisé l'algorithme DNAcopy, disponible sous R, qui va permettre de définir une taille de segments pour les CNA à l'aide du nombre de marqueurs présents ou absents dans ces régions. Ce logiciel permet aussi de fixer une significativité et est nécessaire pour la suite du pipeline.
+
+Ils ont ensuite utilisés GISTIC2 pour... (à compléter)
+
+À noter que pour cette étude, seuls les gènes codants pour des protéines sont gardés.
+
+Chose bizarre, sur le site GDC, on nous parle que de la pipeline ASCAT alors que sur la publication, il est seulement question de GISTIC2
+
+Malheureusement, il est impossible d'avoir accès à l'entièreté des données de séquençage pour pouvoir soit même étudier les altérations car elles sont confidentielles.
+
+Source : <https://github.com/veseshan/DNAcopy> <https://broadinstitute.github.io/gistic2/>
