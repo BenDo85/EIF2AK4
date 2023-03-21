@@ -1,5 +1,9 @@
 # Télécharger le gff3 depuis https://ftp.ensembl.org/pub/release-109/gff3/homo_sapiens/
 # Choisir le bon chromosome
+# Exécuter depuis le répertoire parent
+# Les données du .gff3 doivent se trouver dans le répertoire data
+# Sur linux : python3 python_scripts/get_neighbors_genes.py -c 15 -g EIF2AK4 -i 2000000
+# Sur windows : python.exe python_scripts\get_neighbors_genes.py -c 15 -g EIF2AK4 -i 2000000
 
 from argparse import ArgumentParser
 
@@ -48,7 +52,8 @@ def extract_gff3_genes(path: str) -> list:
             temp = temp_line[8].split(";")
             temp_line.pop(8)
             temp_line.extend(temp)
-            genes.append(temp_line)
+            if "Name=" in temp_line[9]:
+                genes.append(temp_line)
 
     file.close()
     return genes
@@ -93,7 +98,7 @@ def extract_gene_from_interval(
 
 
 genes_list = extract_gff3_genes(
-    "Homo_sapiens.GRCh38.109.chromosome." + args.chromosome + ".gff3"
+    "data/Homo_sapiens.GRCh38.109.chromosome." + args.chromosome + ".gff3"
 )
 
 interval = get_interval_from_gene(genes_list, args.gene, args.intervalle)
@@ -102,13 +107,18 @@ matching_genes = extract_gene_from_interval(
     genes_list, interval[0], interval[1], args.strict
 )
 
-print(matching_genes[0][8][matching_genes[0][8].find(":") + 1:])
+print(matching_genes[0][8][matching_genes[0][8].find(":") + 1 :])
 
-with open("result.tsv", "w+") as file:
+with open("data/result_neighbors_genes.tsv", "w+") as file:
     file.write("Name" + "\t" + "ID\n")
     for gene in matching_genes:
-        file.write(gene[9][gene[9].find("=") + 1 :] + "\t" + gene[8][gene[8].find(":") + 1:] + "\n")
+        file.write(
+            gene[9][gene[9].find("=") + 1 :]
+            + "\t"
+            + gene[8][gene[8].find(":") + 1 :]
+            + "\n"
+        )
 
-with open("result.tsv", "r") as file:
+with open("data/result_neighbors_genes.tsv", "r") as file:
     print(file.read())
     print(f"Au total : {len(matching_genes)} gènes récupérés")

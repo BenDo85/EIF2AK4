@@ -1,7 +1,10 @@
-# Télécharger le gff3 depuis https://ftp.ensembl.org/pub/release-109/gff3/homo_sapiens/
+# Télécharger le .gff3 depuis https://ftp.ensembl.org/pub/release-109/gff3/homo_sapiens/
 # Choisir le bon chromosome
-# Sur linux : python3 closest_genes.py -g EIF2AK4 -c 15
-# Sur windows : python.exe .\closest_genes.py -g EIF2AK4 -c 15
+# Exécuter depuis le répertoire parent
+# Les données du .gff3 doivent se trouver dans le répertoire data
+# Sur linux : python3 python_scripts/closest_genes.py -g EIF2AK4 -c 15
+# Sur windows : python.exe python_scripts\closest_genes.py -g EIF2AK4 -c 15
+
 from argparse import ArgumentParser
 
 parser = ArgumentParser()
@@ -11,7 +14,7 @@ parser.add_argument(
     "--gene",
     type=str,
     help="le nom du gène pour lequel on va chercher ses voisins (par défaut=EIF2AK4)",
-    required=True,
+    required=True
 )
 parser.add_argument(
     "-c",
@@ -20,7 +23,6 @@ parser.add_argument(
     help="Nom du chromosome (par défaut=15)",
     required=True
 )
-
 
 args = parser.parse_args()
 
@@ -35,7 +37,8 @@ def extract_gff3_genes(path: str) -> list:
             temp = temp_line[8].split(";")
             temp_line.pop(8)
             temp_line.extend(temp)
-            genes.append(temp_line)
+            if "Name=" in temp_line[9]:
+                genes.append(temp_line)
 
     file.close()
     return genes
@@ -68,6 +71,8 @@ def extract_gene_from_interval(genes_list: list, lower: int, upper: int) -> list
             distance = start - upper
         if distance < 0:
             distance = 0
+        if distance < 222911:
+            pass
         temp = gene
         temp.append(distance)
         matching_genes.append(temp)
@@ -84,12 +89,10 @@ matching_genes = extract_gene_from_interval(genes_list, interval[0], interval[1]
 
 matching_genes.sort(key=lambda x: x[-1])
 
-with open("data/result.tsv", "w+") as file:
-    file.write("Name\tID\tDistance\n")
+with open("data/result_closest_genes.tsv", "w+") as file:
+    file.write("Nom\tID\tDistance\n")
     for gene in matching_genes:
         gene_name = gene[9][gene[9].find("=") + 1 :]
-        if gene_name == "protein_coding":
-            gene_name = "Novel Protein"
         file.write(
             gene_name
             + "\t"
@@ -99,5 +102,5 @@ with open("data/result.tsv", "w+") as file:
             + "\n"
         )
 
-with open("data/result.tsv", "r") as file:
+with open("data/result_closest_genes.tsv", "r") as file:
     print(file.read())
