@@ -23,6 +23,3 @@ df = aggregate(df, by=list(df$Tumor_Sample_Barcode), FUN=length)
 colnames(df) = c("Patient_ID", "Mutational_Count")
 
 write.table(df, file = "data/patient_mutational_count.tsv", sep = "\t", row.names = FALSE)
-
-mutation P53
-Voir le désequilibre
