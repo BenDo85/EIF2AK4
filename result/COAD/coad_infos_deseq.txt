@@ -1,0 +1,54 @@
+fdr = 0.01
+
+LUAD (H : 231, F : 204) (N : 264, S : 164 , D : 7)
+    No Sex :
+        Normal/Deep -> 
+            Total : 60660
+            Non significatif : 56780, NA : 3694, Different : 186
+            up : 68, down : 118
+
+        Normal/Shallow ->
+            Total : 60660
+            Non significatif : 49818, NA : 3694, Different : 7148
+            up : 3052, down : 4096
+
+        Shallow/Deep ->
+            Total : 60660
+            Non significatif : 56891, NA : 3694, Different : 75
+            up : 32, down : 43
+    VS Sex ->
+        Total : 60660
+        Non significatif : 55979, NA : 3694, Different : 987
+        up : 400, down : 587
+    Sex :
+        H (N : 138, S : 90, D : 3):
+            Normal/Deep -> 
+                Total : 60660
+                Non significatif : 56187, NA : 4316, Different : 157
+                up : 57, down : 100
+
+            Normal/Shallow ->
+                Total : 60660
+                Non significatif : 51283, NA : 4316, Different : 5061
+                up : 1438, down : 3623
+
+            Shallow/Deep ->
+                Total : 60660
+                Non significatif : 56253, NA : 4316, Different : 91
+                up : 37, down : 54
+        F (N : 126, S : 74, D : 4):
+            Normal/Deep -> 
+                Total : 60660
+                Non significatif : 54843, NA : 5745, Different : 72
+                up : 40, down : 32
+
+            Normal/Shallow ->
+                Total : 60660
+                Non significatif : 50742, NA : 5745, Different : 4173
+                up : 2521, down : 1652
+
+            Shallow/Deep ->
+                Total : 60660
+                Non significatif : 54880, NA : 5745, Different : 35
+                up : 18, down : 17
+
