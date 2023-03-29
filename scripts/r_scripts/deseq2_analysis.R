@@ -122,7 +122,6 @@ for (the_ID in colnames(star_counts_dt)) {
 rm(the_ID)
 
 
-
 # On enlève les individus non-présents dans l'intersection pour les métadonnées
 meta <- meta[meta$ID %in% intersected,]
 rm(the_ID, intersected)
