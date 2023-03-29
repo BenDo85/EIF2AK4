@@ -1,0 +1,501 @@
+---
+title: "Analyse de survie de patients par rapport au statut du gène EIF2AK4"
+output: pdf_document
+date: "2023-03-24"
+latex_engine : xelatex 
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Installation des packages nécessaires
+
+```{r, results = "hide",message= FALSE, warning = FALSE}
+if (!require("BiocManager", quietly = TRUE))
+  install.packages("BiocManager")
+BiocManager::install("cBioPortalData",dependencies=TRUE,force=TRUE)
+library(cBioPortalData)
+library(survival)
+library(ggsurvfit)
+library(ggplot2)
+library(survivalAnalysis)
+```
+
+```{r, results = "hide"}
+# Création d'un objet cbioportal
+cbio <- cBioPortal()
+```
+
+```{r}
+# Récupération des données cliniques
+
+clinical_data_luad <- clinicalData(cbio, "luad_tcga_pan_can_atlas_2018")
+clinical_data_coad <- clinicalData(cbio,"coadread_tcga_pan_can_atlas_2018")
+clinical_data_brca <- clinicalData(cbio,"brca_tcga_pan_can_atlas_2018")# Récupération des données cliniques
+```
+
+```{r}
+# Récupération des patients
+
+luad_samples <- allSamples(cbio,"luad_tcga_pan_can_atlas_2018")
+coad_samples <- allSamples(cbio,"coadread_tcga_pan_can_atlas_2018")
+brca_samples <- allSamples(cbio,"brca_tcga_pan_can_atlas_2018")
+```
+
+```{r}
+# Récupération des informations sur le gène "EIF2AK4"
+
+EIF2AK4 <- cbio$getGeneUsingGET("EIF2AK4")
+EIF2AK4 <- httr::content(EIF2AK4)
+gene <- EIF2AK4$entrezGeneId
+```
+
+## Importation des données d'intérêts
+
+```{r}
+# CNA
+
+luad_cna_data <- molecularData(cbio, molecularProfileId = "luad_tcga_pan_can_atlas_2018_gistic",
+                               entrezGeneIds = gene,
+                               sampleIds = luad_samples$sampleId
+)
+luad_cna_data <- luad_cna_data$luad_tcga_pan_can_atlas_2018_gistic
+
+
+coad_cna_data <- molecularData(cbio, molecularProfileId = "coadread_tcga_pan_can_atlas_2018_gistic",
+                               entrezGeneIds = gene,
+                               sampleIds = coad_samples$sampleId
+)
+coad_cna_data <- coad_cna_data$coadread_tcga_pan_can_atlas_2018_gistic
+
+brca_cna_data <- molecularData(cbio, molecularProfileId = "brca_tcga_pan_can_atlas_2018_gistic",
+                               entrezGeneIds = gene,
+                               sampleIds = brca_samples$sampleId
+)
+brca_cna_data <- brca_cna_data$brca_tcga_pan_can_atlas_2018_gistic
+
+```
+
+```{r}
+#Données d'expression ARNm
+
+luad_express_data <- molecularData(cbio, molecularProfileId = "luad_tcga_pan_can_atlas_2018_rna_seq_v2_mrna_median_all_sample_Zscores",
+                                   entrezGeneIds = gene,
+                                   sampleIds = luad_samples$sampleId
+)
+luad_express_data <- luad_express_data$luad_tcga_pan_can_atlas_2018_rna_seq_v2_mrna_median_all_sample_Zscores
+
+coad_express_data <- molecularData(cbio, molecularProfileId = "coadread_tcga_pan_can_atlas_2018_rna_seq_v2_mrna_median_all_sample_Zscores",
+                                   entrezGeneIds = gene,
+                                   sampleIds = coad_samples$sampleId
+)
+coad_express_data <- coad_express_data$coadread_tcga_pan_can_atlas_2018_rna_seq_v2_mrna_median_all_sample_Zscores
+
+brca_express_data <- molecularData(cbio, molecularProfileId = "brca_tcga_pan_can_atlas_2018_rna_seq_v2_mrna_median_all_sample_Zscores",
+                                   entrezGeneIds = gene,
+                                   sampleIds = brca_samples$sampleId
+)
+brca_express_data <- brca_express_data$brca_tcga_pan_can_atlas_2018_rna_seq_v2_mrna_median_all_sample_Zscores
+
+```
+
+```{r, results = "hide", message = FALSE, warning = FALSE}
+#Import des données de traitements 
+#Nécessité de télécharger les données via cbioportal
+
+setwd(dir = "~/Bureau/projet/data")
+
+
+coad_treatment <- read.csv("coad/coadread_tcga_pan_can_atlas_2018/data_timeline_treatment.txt",sep="\t")
+brca_treatment <- read.csv("brca/brca_tcga_pan_can_atlas_2018/data_timeline_treatment.txt",sep="\t")
+
+```
+
+## Formatage des données
+
+```{r}
+#Données cliniques 
+
+clinical_data_luad$PFS_STATUS <- recode(clinical_data_luad$PFS_STATUS, 
+                                  "0:CENSORED" = 0,
+                                  "1:PROGRESSION" = 1
+)
+
+clinical_data_coad$PFS_STATUS <- recode(clinical_data_coad$PFS_STATUS, 
+                                  "0:CENSORED" = 0,
+                                  "1:PROGRESSION" = 1
+)
+
+clinical_data_brca$PFS_STATUS <- recode(clinical_data_brca$PFS_STATUS, 
+                                  "0:CENSORED" = 0,
+                                  "1:PROGRESSION" = 1
+)
+
+```
+
+```{r}
+## CNA 
+
+# On garde les patients présents dans les deux jeux de données
+
+
+clinical_luad_data<- subset(clinical_data_luad, clinical_data_luad$patientId %in% luad_cna_data$patientId)
+clinical_coad_data <- subset(clinical_data_coad, clinical_data_coad$patientId %in% coad_cna_data$patientId)
+clinical_brca_data <- subset(clinical_data_brca, clinical_data_brca$patientId %in% brca_cna_data$patientId)
+
+#On ajoute les valeurs de CNA au dataframe 
+
+cna_luad_data <- clinical_luad_data %>% inner_join(luad_cna_data, by = c("patientId" = "patientId"))
+cna_coad_data <- clinical_coad_data %>% inner_join(coad_cna_data, by = c("patientId" = "patientId"))
+cna_brca_data <- clinical_brca_data %>% inner_join(brca_cna_data, by = c("patientId" = "patientId"))
+
+#On prend les valeurs qualitatives de CNA (-2,-1,0,1,2) puis on les renommes
+
+cna_luad_data$value <- recode(cna_luad_data$value,
+             "-2" = "Deep Deletion",
+             "-1" = "Shallow Deletion",
+             "0" = "Diploid",
+             "1" = "Gain",
+             "2" = "Amplification")
+
+
+cna_coad_data$value <- recode(cna_coad_data$value,
+                              "-2" = "Deep Deletion",
+                              "-1" = "Shallow Deletion",
+                              "0" = "Diploid",
+                              "1" = "Gain",
+                              "2" = "Amplification")
+
+cna_brca_data$value <- recode(cna_brca_data$value,
+                              "-2" = "Deep Deletion",
+                              "-1" = "Shallow Deletion",
+                              "0" = "Diploid",
+                              "1" = "Gain",
+                              "2" = "Amplification")
+```
+
+```{r}
+## mrna
+
+#On prend les 25% de patients avec le moins d'expression et le plus d'expression 
+
+limits_luad <- quantile(luad_express_data$value,prob=c(.25,.75))
+luad_low25 <- subset(luad_express_data,luad_express_data$value <= limits_luad[1])
+luad_high25 <- subset(luad_express_data,luad_express_data$value >= limits_luad[2])
+luad_low25$expression = "low"
+luad_high25$expression = "high"
+mrna_luad <- rbind(luad_low25,luad_high25)
+mrna_luad <- mrna_luad %>% inner_join(clinical_data_luad, by = c("patientId" = "patientId"))
+
+
+
+
+limits_coad <- quantile(coad_express_data$value,prob=c(.25,.75))
+coad_low25 <- subset(coad_express_data,coad_express_data$value <= limits_coad[1])
+coad_high25 <- subset(coad_express_data,coad_express_data$value >= limits_coad[2])
+coad_low25$expression = "low"
+coad_high25$expression = "high"
+mrna_coad <- rbind(coad_low25,coad_high25)
+mrna_coad <- mrna_coad %>% inner_join(clinical_data_coad, by = c("patientId" = "patientId"))
+
+
+
+
+limits_brca <- quantile(brca_express_data$value,prob=c(.25,.75))
+brca_low25 <- subset(brca_express_data,brca_express_data$value <= limits_brca[1])
+brca_high25 <- subset(brca_express_data,brca_express_data$value >= limits_brca[2])
+brca_low25$expression = "low"
+brca_high25$expression = "high"
+mrna_brca <- rbind(brca_low25,brca_high25)
+mrna_brca <- mrna_brca %>% inner_join(clinical_data_brca, by = c("patientId" = "patientId"))
+
+```
+
+```{r}
+#Traitements
+
+coad_treatment <- unique(coad_treatment[,c("PATIENT_ID","AGENT")])
+
+#On prend les patients ayant eu des traitements où l'on soupçonne un effet de survie positif lorsque celui-ci combiné à une délétion de EIF2AK4.
+
+#COAD
+
+coad_oxaliplatin <- coad_treatment[coad_treatment$AGENT=="Oxaliplatin",]
+coad_capecitabin <- coad_treatment[coad_treatment$AGENT == "Capecitabine",]
+
+good_treatment_coad <- rbind(coad_capecitabin,coad_oxaliplatin)
+good_treatment_coad$AGENT = "oxaliplatin/capecitabin"
+good_treatment_coad <- good_treatment_coad[!duplicated(good_treatment_coad),]
+
+names(good_treatment_coad) <- c("patientId","AGENT")
+coad_other_treatment <- subset(coad_treatment, !(coad_treatment$PATIENT_ID %in% good_treatment_coad$patientId))
+coad_other_treatment <- as.data.frame(unique(coad_other_treatment$PATIENT_ID))
+coad_other_treatment$AGENT <- "other"
+names(coad_other_treatment) <- c("patientId","AGENT")
+good_treatment_coad <- sample_n(good_treatment_coad,length(coad_other_treatment))
+coad_treatments <- rbind(good_treatment_coad,coad_other_treatment)
+
+
+#BRCA
+brca_treatment <- unique(brca_treatment[,c("PATIENT_ID","AGENT")])
+brca_good_treatments <- subset(brca_treatment, grepl("Doxorubicin|Capecitabine",brca_treatment$AGENT))
+brca_good_treatments$AGENT <- "Doxorubicin/Capecitabine"
+brca_good_treatments <- brca_good_treatments[!duplicated(brca_good_treatments),]
+brca_other_treatment <- subset(brca_treatment, !(brca_treatment$PATIENT_ID %in% brca_good_treatments$PATIENT_ID))
+intersect(brca_other_treatment$`unique(brca_other_treatment$PATIENT_ID)`,brca_good_treatments$PATIENT_ID)
+brca_other_treatment <- as.data.frame(unique(brca_other_treatment$PATIENT_ID))
+intersect(brca_other_treatment$`unique(brca_other_treatment$PATIENT_ID)`,brca_good_treatments$PATIENT_ID)
+brca_other_treatment$AGENT <- "other"
+brca_other_treatment <- sample_n(brca_other_treatment,length(brca_good_treatments$PATIENT_ID))
+names(brca_other_treatment) <- c("patientId","AGENT")
+names(brca_good_treatments) <- c("patientId","AGENT")
+brca_treatments <- rbind(brca_good_treatments,brca_other_treatment)
+
+
+```
+
+## Dataframes de survie
+
+```{r}
+#Dataframe pour mrna
+
+survival_luad_mrna <- data.frame(mrna_luad$patientId,as.numeric(mrna_luad$PFS_MONTHS),mrna_luad$PFS_STATUS,mrna_luad$expression,mrna_luad$CANCER_TYPE_ACRONYM)
+names(survival_luad_mrna)=c("patientId","Durée","Survie","mrna_expression","cancer_type")
+  
+survival_coad_mrna <- data.frame(mrna_coad$patientId,as.numeric(mrna_coad$PFS_MONTHS),mrna_coad$PFS_STATUS,mrna_coad$expression,mrna_coad$CANCER_TYPE_ACRONYM)
+names(survival_coad_mrna)=c("patientId","Durée","Survie","mrna_expression","cancer_type")
+  
+survival_brca_mrna <- data.frame(mrna_brca$patientId,as.numeric(mrna_brca$PFS_MONTHS),mrna_brca$PFS_STATUS,mrna_brca$expression,mrna_brca$CANCER_TYPE_ACRONYM)
+names(survival_brca_mrna)=c("patientId","Durée","Survie","mrna_expression","cancer_type")
+```
+
+```{r}
+#Dataframe pour CNA
+survival_luad_CNA <- data.frame(cna_luad_data$patientId,as.numeric(cna_luad_data$PFS_MONTHS),cna_luad_data$PFS_STATUS,cna_luad_data$value,cna_luad_data$CANCER_TYPE_ACRONYM)
+  names(survival_luad_CNA)=c("patientId","Durée","Survie","CNA","cancer_type")
+  
+  survival_coad_CNA <- data.frame(cna_coad_data$patientId,as.numeric(cna_coad_data$PFS_MONTHS),cna_coad_data$PFS_STATUS,cna_coad_data$value,cna_coad_data$CANCER_TYPE_ACRONYM)
+  names(survival_coad_CNA)=c("patientId","Durée","Survie","CNA","cancer_type")
+  
+  survival_brca_CNA <- data.frame(cna_brca_data$patientId,as.numeric(cna_brca_data$PFS_MONTHS),cna_brca_data$PFS_STATUS,cna_brca_data$value,cna_brca_data$CANCER_TYPE_ACRONYM)
+  names(survival_brca_CNA)=c("patientId","Durée","Survie","CNA","cancer_type")
+
+```
+
+```{r}
+#Dataframe pour traitements 
+
+coad_treatments_cna <- coad_treatments %>% inner_join(survival_coad_CNA, by = c("patientId" = "patientId"))
+coad_treatments_mrna <- coad_treatments %>% inner_join(survival_coad_mrna, by = c("patientId" = "patientId"))
+
+brca_treatments_cna <- brca_treatments %>% inner_join(survival_brca_CNA, by = c("patientId" = "patientId"))
+brca_treatments_mrna <- brca_treatments %>% inner_join(survival_brca_mrna, by = c("patientId" = "patientId"))
+
+
+```
+
+## Tests statistiques
+
+```{r}
+#Tests CNA EIF2AK4 ~ Progression free survival
+#On change les levels pour mettre Diploid en premier = niveau de référence 
+survival_luad_CNA$CNA <- factor(survival_luad_CNA$CNA, levels = c("Diploid","Deep Deletion","Shallow Deletion","Gain","Amplification"))
+survival_coad_CNA$CNA <- factor(survival_coad_CNA$CNA, levels = c("Diploid","Deep Deletion","Shallow Deletion","Gain","Amplification"))
+survival_brca_CNA$CNA <- factor(survival_brca_CNA$CNA, levels = c("Diploid","Deep Deletion","Shallow Deletion","Gain","Amplification"))
+
+
+luad_cox_cna<-coxph(Surv(survival_luad_CNA$Durée,survival_luad_CNA$Survie)~survival_luad_CNA$CNA,data=survival_luad_CNA)
+coad_cox_cna<-coxph(Surv(survival_coad_CNA$Durée,survival_coad_CNA$Survie)~survival_coad_CNA$CNA,data=survival_coad_CNA)
+brca_cox_cna<-coxph(Surv(survival_brca_CNA$Durée,survival_brca_CNA$Survie)~survival_brca_CNA$CNA,data=survival_brca_CNA)
+
+
+summary(luad_cox_cna)
+summary(coad_cox_cna)
+summary(brca_cox_cna)
+
+```
+
+Nous cherchons ici à caractériser la survie entre deux groupes pour chaque type de cancer, les deux groupes étant ceux dont la tumeur possède une perte de l'allèle EIF2AK4 (homozygote ou hétérozygote) et les personnes dont la tumeur est diploïde.
+
+La régression de cox permet de modéliser le temps jusqu'à un événement donné, (le décès), en prenant en compte les facteurs de risque associés.
+
+L'intérêt d'utiliser une régression de Cox réside dans sa capacité à prendre en compte plusieurs variables explicatives, qui peuvent influencer le temps jusqu'à l'événement d'intérêt. En modélisant la relation entre ces covariables et le risque de l'événement, la régression de Cox permet de quantifier l'effet de chaque variable sur le temps jusqu'à l'événement, tout en contrôlant les effets des autres variables.
+
+Cette méthode repose sur un modèle semi-paramétrique qui combine une fonction de survie non paramétrique, décrivant l'évolution de la survie au fil du temps, avec une fonction de risque, qui décrit le risque instantané de survenue de l'événement.
+
+La régression de Cox permet de modéliser la relation entre ces fonctions de survie et de risque et les covariables en utilisant une méthode de régression partielle. Cela permet d'estimer l'effet de chaque covariable sur le risque de l'événement d'intérêt, tout en contrôlant les effets des autres covariables. En d'autres termes, la régression de Cox permet de déterminer l'impact de chaque covariable sur le temps jusqu'à l'événement, en tenant compte des autres facteurs qui peuvent également influencer ce temps.
+
+Pour la régression de Cox, les principales conditions d'application sont les suivantes :
+
+1.  Les données doivent être censurées, c'est-à-dire qu'il doit y avoir des sujets qui n'ont pas encore eu l'événement d'intérêt à la fin de l'étude ou qui ont été perdus de vue avant la survenue de l'événement.
+
+2.  Les événements doivent être indépendants les uns des autres. En d'autres termes, la survenue de l'événement pour un sujet ne doit pas influencer la survenue de l'événement pour les autres sujets.
+
+3.  Les risques relatifs doivent être constants dans le temps, c'est-à-dire que l'effet des covariables sur le risque doit être constant dans le temps =\> On considèrera ici que le génome des tumeurs n'évolue pas dans le temps.
+
+```{r}
+#Tests mRNA expression ~ Progression free survival 
+survival_luad_mrna$mrna_expression <- factor(survival_luad_mrna$mrna_expression, levels = c("high","low"))
+survival_coad_mrna$mrna_expression <- factor(survival_coad_mrna$mrna_expression, levels = c("high","low"))
+survival_brca_mrna$mrna_expression <- factor(survival_brca_mrna$mrna_expression, levels = c("high","low"))
+
+
+luad_cox_mrna<-coxph(Surv(survival_luad_mrna$Durée,survival_luad_mrna$Survie)~survival_luad_mrna$mrna_expression,data=survival_luad_mrna)
+coad_cox_mrna<-coxph(Surv(survival_coad_mrna$Durée,survival_coad_mrna$Survie)~survival_coad_mrna$mrna_expression,data=survival_coad_mrna)
+brca_cox_mrna<-coxph(Surv(survival_brca_mrna$Durée,survival_brca_mrna$Survie)~survival_brca_mrna$mrna_expression,data=survival_brca_mrna)
+
+
+summary(luad_cox_mrna)
+summary(coad_cox_mrna)
+summary(brca_cox_mrna)
+
+
+```
+
+On observe donc qu'il n'y a pas de corrélation entre la survie des patients sans progression et le statut de l'allèle EIF2AK4 dans aucun des cancers selon les données que nous avons.
+
+```{r}
+ coad_treatments_mrna$mrna_expression <- factor(coad_treatments_mrna$mrna_expression, levels = c("high","low"))
+brca_treatments_mrna$mrna_expression <- factor(brca_treatments_mrna$mrna_expression, levels = c("high","low"))
+coad_treatments_cna$CNA <- factor(coad_treatments_cna$CNA, levels =  c("Diploid","Deep Deletion","Shallow Deletion","Gain","Amplification"))
+brca_treatments_cna$CNA <- factor(brca_treatments_cna$CNA, levels =  c("Diploid","Deep Deletion","Shallow Deletion","Gain","Amplification"))
+
+
+
+coad_cox_treatment_mrna <- coxph(Surv(coad_treatments_mrna$Durée,coad_treatments_mrna$Survie)~coad_treatments_mrna$mrna_expression+coad_treatments_mrna$AGENT,data = coad_treatments_mrna)
+
+coad_cox_treatment_cna <- coxph(Surv(coad_treatments_cna$Durée,coad_treatments_cna$Survie)~coad_treatments_cna$CNA+coad_treatments_cna$AGENT,data = coad_treatments_cna)
+
+brca_cox_treatment_mrna <- coxph(Surv(brca_treatments_mrna$Durée,brca_treatments_mrna$Survie)~brca_treatments_mrna$mrna_expression+brca_treatments_mrna$AGENT,data = brca_treatments_mrna)
+
+brca_cox_treatment_cna <- coxph(Surv(brca_treatments_cna$Durée,brca_treatments_cna$Survie)~brca_treatments_cna$CNA+brca_treatments_cna$AGENT,data = brca_treatments_cna)
+
+summary(coad_cox_treatment_mrna)
+summary(coad_cox_treatment_cna)
+summary(brca_cox_treatment_mrna)
+summary(brca_cox_treatment_cna)
+```
+
+```{r}
+#Pancancer
+
+#CNA 
+
+pancancer_surv <- rbind(survival_luad_CNA,survival_coad_CNA,survival_brca_CNA)
+pancancer_cox <- coxph(Surv(pancancer_surv$Durée,pancancer_surv$Survie)~pancancer_surv$CNA,data = pancancer_surv)
+summary(pancancer_cox)
+
+#MRNA
+pancancer_surv_mrna <- rbind(survival_luad_mrna,survival_coad_mrna,survival_brca_mrna)
+pancancer_cox_mrna <- coxph(Surv(pancancer_surv_mrna$Durée,pancancer_surv_mrna$Survie)~pancancer_surv_mrna$mrna_expression,data = pancancer_surv_mrna)
+summary(pancancer_cox_mrna)
+
+```
+
+Aucun de ces résultats n'est significatif ou alors le nombre de cas (amplification pour BRCA) est trop faible pour conclure.
+
+## Plots
+
+```{r pressure, echo=FALSE}
+
+par(mfrow=c(2,2))
+
+#Plots PFS~EIF2AK4_CNA
+
+survfit2(Surv(survival_luad_CNA$Durée,survival_luad_CNA$Survie)~survival_luad_CNA$CNA,data=survival_luad_CNA) %>%
+  ggsurvfit() +
+  labs(
+    title = "Courbe de survie LUAD en fonction du CNA de EIF2AK4",
+    x = "Temps (en mois)",
+    y = "Probabilité de survie"
+  )
+
+
+survfit2(Surv(survival_coad_CNA$Durée,survival_coad_CNA$Survie)~survival_coad_CNA$CNA,data=survival_coad_CNA) %>%
+  ggsurvfit() +
+  add_risktable()+
+  labs(
+    title = "Courbe de survie COAD en fonction du CNA de EIF2AK4 ",
+    x = "Temps (en mois)",
+    y = "Probabilité de survie"
+  )
+
+survfit2(Surv(survival_brca_CNA$Durée,survival_brca_CNA$Survie)~survival_brca_CNA$CNA,data=survival_brca_CNA) %>%
+  ggsurvfit() +
+  labs(
+    title = "Courbe de survie BRCA en fonction du CNA de EIF2AK4",
+    x = "Temps (en mois)",
+    y = "Probabilité de survie"
+  )
+
+# Plots PFS~EIF2AK4_mrna 
+
+survfit2(Surv(survival_luad_mrna$Durée,survival_luad_mrna$Survie)~survival_luad_mrna$mrna_expression,data=survival_luad_mrna) %>%
+  ggsurvfit() +
+  labs(
+    title = "Courbe de survie LUAD en fonction de l'expression de EIF2AK4",
+    x = "Temps (en mois)",
+    y = "Probabilité de survie"
+  )
+
+survfit2(Surv(survival_coad_mrna$Durée,survival_coad_mrna$Survie)~survival_coad_mrna$mrna_expression,data=survival_coad_mrna) %>%
+  ggsurvfit() +
+  labs(
+    
+    title = "Courbe de survie COAD en fonction de l'expression de EIF2AK4",
+    x = "Temps (en mois)",
+    y = "Probabilité de survie"
+  )
+
+survfit2(Surv(survival_brca_mrna$Durée,survival_brca_mrna$Survie)~survival_brca_mrna$mrna_expression,data=survival_brca_mrna) %>%
+  ggsurvfit() +
+  labs(
+    title = "Courbe de survie BRCA en fonction de l'expression de EIF2AK4",
+    x = "Temps (en mois)",
+    y = "Probabilité de survie"
+  )
+#Treatments
+
+survfit2(Surv(coad_treatments_mrna$Durée,coad_treatments_mrna$Survie)~coad_treatments_mrna$mrna_expression+coad_treatments_mrna$AGENT,data = coad_treatments_mrna) %>%
+  ggsurvfit() +
+  labs(
+    title = "Courbe de survie COAD en fonction de l'expression de EIF2AK4 et du traitement",
+    x = "Temps (en mois)",
+    y = "Probabilité de survie"
+  )
+
+survfit2(Surv(coad_treatments_cna$Durée,coad_treatments_cna$Survie)~coad_treatments_cna$CNA+coad_treatments_cna$AGENT,data = coad_treatments_cna) %>%
+  ggsurvfit() +
+  labs(
+    title = "Courbe de survie COAD en fonction du CNA de EIF2AK4 et du traitement",
+    x = "Temps (en mois)",
+    y = "Probabilité de survie"
+  )
+
+survfit2(Surv(brca_treatments_mrna$Durée,brca_treatments_mrna$Survie)~brca_treatments_mrna$mrna_expression+brca_treatments_mrna$AGENT,data = brca_treatments_mrna) %>%
+  ggsurvfit() +
+  labs(
+    title = "Courbe de survie BRCA en fonction de l'expression de EIF2AK4 et du traitement",
+    x = "Temps (en mois)",
+    y = "Probabilité de survie"
+  )
+
+survfit2(Surv(brca_treatments_cna$Durée,brca_treatments_cna$Survie)~brca_treatments_cna$CNA+brca_treatments_cna$AGENT,data = brca_treatments_cna) %>%
+  ggsurvfit() +
+  labs(
+    title = "Courbe de survie BRCA en fonction du CNA EIF2AK4 et du traitement",
+    x = "Temps (en mois)",
+    y = "Probabilité de survie"
+  )
+
+
+
+
+
+
+
+
+
+
+```
