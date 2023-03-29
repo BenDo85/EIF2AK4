@@ -1,0 +1,134 @@
+---
+title: "Graphiques_analyse"
+autor: "Zoé LAFFITTE"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(stats)
+library(ggvenn)
+library(reshape2)
+library(vcd)
+library(msigdbr)
+library(ggpubr)
+library(ggVennDiagram)
+install.packages("ggVennDiagram")
+```
+
+# Déscription:
+
+Ce présent R mardown à pour objectif la visualisation des données traitées et précédemment obtenues par des filtrages, du test de wilcoxon et l'annalyse d'enrichissement.
+Ce mardown à tourné sous R (1.2.5033).
+
+# Chargement des données:
+```{r}
+all_data_coad_common <- readRDS("~/zoe/coad/R/all_data_coad_common.rds")
+all_data_luad_common <- saveRDS("~/zoe/luad/R/all_data_luad_common.rds")
+all_data_brca_common <- saveRDS("~/zoe/brca/R/all_data_brca_common.rds")
+```
+
+#Diagramme de venn et répartition des cancers:
+```{r}
+# Listing des gènes
+genes_coad <- unique(all_data_coad_common$Hugo_Symbol)
+genes_luad <- unique(all_data_coad_common$Hugo_Symbol)
+genes_brca <- unique(all_data_coad_common$Hugo_Symbol)
+
+gene_list <- list(COAD = genes_coad, 
+                  LUAD = genes_luad, 
+                  BRCA = genes_brca)
+# Diagramme de Venn
+ggvenn(
+  gene_list, 
+  fill_color = c("#fa0038", "#ff0000", "#6100fe"),
+  stroke_size = 0.3, set_name_size = 4,
+  stroke_alpha = 1,
+  stroke_color = "white",
+  text_size = 3,
+  digits = 1
+  )
+
+ggVennDiagram(gene_list, label_color = "red") 
+```
+
+## Répartition des sexes - mosaic plot
+```{r}
+hc <- length(all_data_coad_common$Sexe[all_data_coad_common$Sexe=="MALE"])
+hl <- length(all_data_luad_common$Sexe[all_data_luad_common$Sexe=="MALE"])
+hb <- length(all_data_brca_common$Sexe[all_data_brca_common$Sexe=="MALE"])
+fc <- length(all_data_coad_common$Sexe[all_data_coad_common$Sexe=="FEMALE"])
+fl <- length(all_data_luad_common$Sexe[all_data_luad_common$Sexe=="FEMALE"])
+fb <- length(all_data_brca_common$Sexe[all_data_brca_common$Sexe=="FEMALE"])
+
+data_count_sexe <- matrix(c(hc, fc, hl, fl, hb, fb))
+  
+# creating dataset with above values
+data_map_sexe <- as.table(
+  matrix(
+    data_count_sexe,
+      
+    # specifying the number of rows
+    nrow = 3,
+    byrow = TRUE,
+      
+    # creating two lists one for rows
+    # and one for columns
+    dimnames = list(
+      Cancers = c('COAD','LUAD','BRCA'),
+      Genders = c('MALE', 'FEMALE')
+      )
+    )
+  )
+
+mosaicplot(data_map_sexe,
+       shade=TRUE,
+       border = "chocolate",
+       main = "Répartition des sexes par cancers"
+)
+
+```
+
+## Répartion selon le statut de CNA_EIF2AK4 - mosaic plot
+```{r}
+cna0c <- length(all_data_coad_common$CNA_EIF2AK4[all_data_coad_common$CNA_EIF2AK4==0])
+cna0l <- length(all_data_luad_common$CNA_EIF2AK4[all_data_luad_common$CNA_EIF2AK4==0])
+cna0b <- length(all_data_brca_common$CNA_EIF2AK4[all_data_brca_common$CNA_EIF2AK4==0])
+cna1c <- length(all_data_coad_common$CNA_EIF2AK4[all_data_coad_common$CNA_EIF2AK4==1])
+cna1l <- length(all_data_luad_common$CNA_EIF2AK4[all_data_luad_common$CNA_EIF2AK4==1])
+cna1b <- length(all_data_brca_common$CNA_EIF2AK4[all_data_brca_common$CNA_EIF2AK4==1])
+
+data_count_cna <- matrix(c(cna0c, cna0l, cna0b, cna1c, cna1l, cna1b))
+  
+# creating dataset with above values
+data_map_cna <- as.table(
+  matrix(
+    data_count_cna,
+      
+    # specifying the number of rows
+    nrow = 3,
+    byrow = TRUE,
+      
+    # creating two lists one for rows
+    # and one for columns
+    dimnames = list(
+      c('COAD','LUAD','BRCA'),
+      c('Deletion', 'Diploid')
+      )
+    )
+  )
+
+mosaicplot(data_map_cna,
+       shade=TRUE,
+       border = "chocolate",
+       main = "Répartition des CNA pour EIF2AK4",
+       type ="deviance",
+       xlab = "EIF2AK4 status", 
+       ylab = "Cancers")
+  )
+```

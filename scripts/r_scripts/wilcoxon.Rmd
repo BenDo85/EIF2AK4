@@ -1,0 +1,165 @@
+---
+title: "tcga"
+autor: "Zoé LAFFITTE"
+date: "2023-03-24"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(stats)
+library(ggvenn)
+library(reshape2)
+library(vcd)
+library(msigdbr)
+library(ggpubr)
+library(ggVennDiagram)
+install.packages("ggVennDiagram")
+```
+
+```{r}
+if (!require("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+BiocManager::install(version = "3.14")
+BiocManager::install("EnrichmentBrowser")
+```
+
+# Déscription:
+Ce présent fichier R mardown à pour objectif de permettre l'analyse d'expression différencielle des gènes d'intérets. Un test de wilcoxon à grande échelle est d'abord réalisé. Puis l'analyse d'enrichissement est effectuée.
+Attention: Ce fichier R mardown à nécéssité l'environnement R (R.1.2) pour certains packages.
+
+# Chargement des objets précedemment créés:
+```{r}
+all_data_luad <- readRDS("~/zoe/luad/R/all_data_luad.rds")
+all_data_coad <- readRDS("~/zoe/coad/R/all_data_coad.rds")
+all_data_brca <- readRDS("~/zoe/brca/R/all_data_brca.rds")
+```
+
+
+# Annalyse de l'expression différentielle:
+## Fonction pour le test de wilcoxon:
+```{r}
+wilcox_test <- function(data) {
+  
+  # Séparation des données par gène
+  data_genes <- data %>% group_by(Hugo_Symbol)
+  
+  # Appliquer un test de Wilcoxon pour chaque gène
+  results <- data_genes %>%
+    summarise(p_value = wilcox.test(MRNA ~ CNA_EIF2AK4)$p.value) %>%
+    # Ajustement des p-values
+    mutate(p_value_adj = p.adjust(p_value, method = "fdr")) %>%
+    # Identification des gènes significatifs
+    filter(p_value_adj < 0.05)
+  
+  # On ajoute la p_val et on filtre pour ne garder que les gènes significatifs
+  filtered <- merge(data, results[,c("Hugo_Symbol", "p_value_adj")], by = "Hugo_Symbol")
+  filtered <- subset(filtered, Hugo_Symbol %in% results$Hugo_Symbol)
+
+  return(filtered)
+}
+```
+
+## Stockage des résultats des tests:
+```{r}
+all_data_coad_filtered <- wilcox_test(all_data_coad)
+all_data_luad_filtered <- wilcox_test(all_data_luad)
+all_data_brca_filtered <- wilcox_test(all_data_brca)
+
+saveRDS(all_data_coad_filtered, file="~/zoe/coad/R/all_data_coad_filtered.rds")
+saveRDS(all_data_luad_filtered, file="~/zoe/luad/R/all_data_luad_filtered.rds")
+saveRDS(all_data_brca_filtered, file="~/zoe/brca/R/all_data_brca_filtered.rds")
+```
+
+## Filtrage des gènes significatifs pour l'ensemble des cancers:
+```{r}
+genes_coad <- unique(all_data_coad_filtered$Hugo_Symbol)
+genes_luad <- unique(all_data_luad_filtered$Hugo_Symbol)
+genes_brca <- unique(all_data_brca_filtered$Hugo_Symbol)
+
+entrz_coad <- unique(all_data_coad_filtered$Entrez_Gene)
+entrz_luad <- unique(all_data_luad_filtered$Entrez_Gene)
+entrz_brca <- unique(all_data_brca_filtered$Entrez_Gene)
+
+# Extraire les noms de gènes communs
+common_genes <- Reduce(intersect, list(genes_coad, genes_luad, genes_brca)) #Hugo_symbol
+entrz_gene <- Reduce(intersect, list(entrz_coad, entrz_luad, entrz_brca)) #EntrezGeneId
+
+# Filtrer chaque dataframe en fonction des gènes communs
+all_data_coad_common <- filter(all_data_coad_filtered, Hugo_Symbol %in% common_genes)
+all_data_luad_common <- filter(all_data_luad_filtered, Hugo_Symbol %in% common_genes)
+all_data_brca_common <- filter(all_data_brca_filtered, Hugo_Symbol %in% common_genes)
+
+# Stockage des données dans des objets R moins lourds
+saveRDS(all_data_coad_filtered, file="~/zoe/coad/R/all_data_coad_common.rds")
+saveRDS(all_data_luad_filtered, file="~/zoe/luad/R/all_data_luad_common.rds")
+saveRDS(all_data_brca_filtered, file="~/zoe/brca/R/all_data_brca_common.rds")
+```
+
+
+# Annalyse d'enrichissement:
+## Enrichissement kegg pathway:
+```{r}
+listEnrichrSites() # Visualisation des libraires disponnibles
+dbs <- listEnrichrDbs() # Création d'un objet enrichR
+
+dbs <- "KEGG_2021_Human" # Choix de la librairie
+kegg <- enrichr(common_genes, dbs) # Enrichissement 
+
+kegg_num <- kegg$KEGG_2021_Human # Récupération de la dataframe.
+```
+```{r}
+# Trier le dataframe par ordre décroissant de probabilité
+kegg_num <- kegg_num[order(kegg_num$Adjusted.P.value), ]
+
+# Ajouter les colonnes Overlap_num et Overlap_den
+kegg_num$Overlap_num <- sapply(strsplit(kegg_num$Overlap, "/"), `[`, 1)
+kegg_num$Overlap_den <- sapply(strsplit(kegg_num$Overlap, "/"), `[`, 2)
+kegg_num$Overlap_num <- as.numeric(kegg_num$Overlap_num)
+kegg_num$Overlap_den <- as.numeric(kegg_num$Overlap_den)
+kegg_num$Num_genes <- kegg_num$Overlap_den
+
+# Sélectionner les 100 premières lignes
+kegg_num <- head(kegg_num, 20)
+
+# Premier graphique avec ggplot 
+ggplot(kegg_num, aes(x = Odds.Ratio, y = Term, color = Adjusted.P.value, size = Num_genes)) +
+  geom_point() +
+  scale_color_gradient(low = "blue", high = "red") +
+  scale_size_continuous(range = c(2, 10)) +
+  xlab("Odd ratio") +
+  ylab("Term") +
+  ggtitle("Odd ratio by term") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))
+
+# Deuxième graphique avec fonction interne à enrichR
+plotEnrich(enriched, showTerms = 20, numChar = 40, y = "Count", orderBy = "P.value")
+```
+
+## Enrichissement GO_terms:
+```{r}
+GO <- listEnrichrDbs()
+GO <- c("GO_Molecular_Function_2021", "GO_Cellular_Component_2021", "GO_Biological_Process_2021")
+go <- enrichr(common_genes, GO)
+
+go_func <- go$GO_Molecular_Function_2021
+plotEnrich(go_func, showTerms = 20, numChar = 40, y = "Count", orderBy = "P.value")
+```
+```{r}
+go_cell <- go$GO_Cellular_Component_2021
+plotEnrich(go_cell, showTerms = 20, numChar = 40, y = "Count", orderBy = "P.value")
+```
+
+
+
+
+
+
+
+
+

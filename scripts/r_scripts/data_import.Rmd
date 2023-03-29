@@ -1,0 +1,144 @@
+---
+title: "tcga"
+autor: "Zoé LAFFITTE"
+date: '2023-03-24'
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(tidyr)
+```
+# Description:
+
+Ce présent fichiers R mardown à pour objectif de créer une dataframe globale comportant les valeurs d'intérets:
+- ID Hugo_Symbol du gène
+- ID du patient
+- ID Entrez du gène
+- Le statut en nombre de copie du gène par patient
+- L'expression Zscore mRNA du gène par patient
+- Le sexe du patient
+- Le statut du gène EIF2AK4
+
+Ce script a été réalisé sous R(1.2.5033).
+
+# Fonction d'extraction et de normalisation des fichiers:
+```{r}
+extractData <- function(chemin){
+  # récupère le répertoire parent du chemin
+  rep_parent <- dirname(chemin)
+  
+  # récupère le nom de fichier sans extension
+  fichier <- tools::file_path_sans_ext(basename(chemin))
+  
+  data <- read.delim(chemin, sep = "\t", check.names = FALSE)
+  cols <- dim(data)[2] # calcule le nombre de colonnes dans les données
+  
+  # Si le nom du fichier contient "cna" (copy number alterations), on recode les les valeurs à l'exception de la première colonne, qui contient des identifiants de gènes.
+  if (grepl("cna", tolower(fichier))) {
+    data <- data %>%
+      mutate_at(vars(3:cols), ~recode(.x,
+                                      "-2" = "Deep Deletion",
+                                      "-1" = "Shallow Deletion",
+                                      "0" = "Diploid",
+                                      "1" = "Gain",
+                                      "2" = "Amplification"))
+  }
+  
+  # Transpose les données du format large au format long
+  df_long <- pivot_longer(data, cols = 3:cols, names_to = "Patient", values_to = "Valeur")
+  # Supprime les lignes avec les valeurs "Amplification" ou "Gain"
+  df_long <- subset(df_long, !Valeur %in% c("Amplification", "Gain"))
+  
+  # Nomalisation de l'identifiant des patients
+  df_long$Patient <- gsub("-[^-]*$", "", df_long$Patient)
+  
+  # Création d'un objet R pour stocker les données (moins lourd)
+  fichier <- paste0(fichier, ".rds")
+  dossier <- paste(rep_parent, "R", sep="/")
+  chemin <- paste(dossier, fichier, sep="/")
+  
+  if (!dir.exists(dossier)){
+    dir.create(dossier)
+  }
+  
+  saveRDS(df_long, file=chemin)
+  return(df_long)
+}
+
+```
+
+# Fonction de séléction et de croisement des fichiers:
+```{r}
+my_function <- function(cna, mrna, clinical) {
+  
+  # fusionner les dataframes cna_luad et mrna_luad en utilisant la colonne "Patient" et "Hugo_Symbol"
+  genes_status <- merge(cna, mrna, by = c("Patient", "Hugo_Symbol", "Entrez_Gene_Id"))
+  genes_status <- data.frame(Patient=genes_status$Patient, 
+                             Hugo_Symbol=genes_status$Hugo_Symbol,
+                             Entrez_Gene = genes_status$Entrez_Gene_Id,
+                             CNA=genes_status$Valeur.x, 
+                             MRNA=genes_status$Valeur.y)
+  
+  # Supprimer les lignes vides
+  genes_status <-  genes_status[complete.cases(genes_status), ]
+  
+  # remplacer les valeurs de la colonne CNA
+  genes_status <- genes_status %>% 
+    mutate(CNA = recode(
+      CNA,
+      "Deep Deletion" = 1,
+      "Shallow Deletion" = 1,
+      "Diploid" = 0
+    ))
+  
+  # création d'un data.frame globale
+  all_data <- merge(genes_status, clinical, by = "Patient")
+  
+  # filtrer les données pour ne conserver que les patients présents dans le gène EIF2AK4
+  all_data <- all_data %>%
+    filter(Patient %in% all_data$Patient[all_data$Hugo_Symbol=="EIF2AK4"])
+  
+  # Transformer les valeurs de Sexe
+  all_data$Sexe <- toupper(all_data$Sexe)
+  
+  # Créer une nouvelle colonne CNA spécifique à EIF2AK4
+  CNA_EIF2AK4 <- all_data[all_data$Hugo_Symbol == "EIF2AK4", ]
+  CNA_EIF2AK4 <- data.frame(Patient=CNA_EIF2AK4$Patient, CNA_EIF2AK4=CNA_EIF2AK4$CNA)
+  
+  # Remplacer la colonne "CNA" par "CNA_EIF2AK4"
+  all_data <- merge(all_data, CNA_EIF2AK4, by = "Patient")
+  
+  # Retourner le dataframe final
+  return(all_data)
+}
+```
+
+# Création d'une dataframe globale avec les valeurs d'intérets:
+```{r}
+cna_luad <- extractData("~/zoe/luad/data_CNA.txt")
+cna_coad <- extractData("~/zoe/coad/data_cna.txt")
+cna_brca <- extractData("~/zoe/brca/data_cna.txt")
+
+mrna_luad <- extractData("~/zoe/luad/data_RNA_Seq_v2_mRNA_median_all_sample_Zscores.txt")
+mrna_coad <- extractData("~/zoe/coad/data_mrna_seq_v2_rsem_zscores_ref_all_samples.txt")
+mrna_brca <- extractData("~/zoe/brca/data_mrna_seq_v2_rsem_zscores_ref_diploid_samples.txt")
+
+clinical_luad <- read.delim("~/zoe/luad/data_bcr_clinical_data_patient.txt",comment.char="#")
+clinical_coad <- read.delim("~/zoe/coad/data_clinical_patient.txt",comment.char="#")
+clinical_brca <- read.delim("~/zoe/brca/data_clinical_patient.txt",comment.char="#")
+
+clinical_luad <- data.frame(Patient=clinical_luad$PATIENT_ID, Sexe=clinical_luad$SEX)
+clinical_coad <- data.frame(Patient=clinical_coad$PATIENT_ID, Sexe=clinical_coad$SEX)
+clinical_brca <- data.frame(Patient=clinical_brca$PATIENT_ID, Sexe=clinical_brca$SEX)
+
+all_data_luad <- my_function(cna_luad, mrna_luad, clinical_luad)
+all_data_coad <- my_function(cna_coad, mrna_coad, clinical_coad)
+all_data_brca <- my_function(cna_brca, mrna_brca, clinical_brca)
+
+saveRDS(all_data_luad, file="~/zoe/luad/R/all_data_luad.rds")
+saveRDS(all_data_coad, file="~/zoe/coad/R/all_data_coad.rds")
+saveRDS(all_data_brca, file="~/zoe/brca/R/all_data_brca.rds")
+```
+
+
