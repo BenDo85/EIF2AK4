@@ -13,6 +13,6 @@ Comporte l'ensemble des fichiers LaTeX ainsi que les ressources pour pouvoir com
 ## Répertoire result
 Ce répertoire comporte les graphes et les tableaux de synthèse des résultats
 
-## Répertoire script
+## Répertoire scripts
 Comporte les scripts qui reçoit en input certains fichiers du répertoire data et en sort les résultats dans le répertoire résulté
 On retrouve dedans des scripts R et Python
