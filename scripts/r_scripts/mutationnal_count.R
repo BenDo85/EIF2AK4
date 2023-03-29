@@ -4,19 +4,21 @@
 # Meilleur que les données Affymétrix car couvrant 1 à 2 % du génome
 
 # Pour le téléchargemnet des études
-source("Rscripts/download.R")
+source("scripts/r_scripts/download.R")
 download_TCGA_Cbio(download_all = FALSE)
 
 if (!require("data.table", quietly = TRUE)) {
   install.packages("data.table")
 }
-
 library("data.table")
 
 if (!require("BiocManager", quietly = TRUE)) {
   install.packages("BiocManager")
 }
 
+if (!require("maftools", quietly = TRUE)) {
+  install.packages("maftools")
+}
 library(maftools)
 
 # Les 3 variables suivantes sont à modifier
@@ -47,6 +49,3 @@ write.table(result, file = path_table , sep = "\t", row.names = FALSE)
 
 # Si on souhaite lire 
 df = read.table(path_table, header = TRUE, sep = '\t')
-
-
-

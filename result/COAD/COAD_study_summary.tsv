@@ -1,0 +1,7 @@
+"male_normal_vs_deep"	"male_normal_vs_shallow"	"male_shallow_vs_deep"	"female_normal_vs_deep"	"female_normal_vs_shallow"	"female_shallow_vs_deep"
+"Total"	"60660"	"60660"	"60660"	"60660"	"60660"	"60660"
+"NA"	"31232"	"25330"	"41477"	"35593"	"27179"	"36638"
+"Non-significatif"	"27992"	"27422"	"17893"	"24496"	"25172"	"23746"
+"Significatif"	"1436"	"7908"	"1290"	"571"	"8309"	"276"
+"UpRegulation"	"586"	"3188"	"613"	"252"	"4473"	"109"
+"DownRegulation"	"850"	"4720"	"677"	"319"	"3836"	"167"

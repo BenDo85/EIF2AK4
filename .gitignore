@@ -1,3 +1,4 @@
 data/studies_data/*
+data/star_count*
 .RData
 .Rhistory

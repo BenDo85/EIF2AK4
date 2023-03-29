@@ -51,5 +51,3 @@ download_TCGA_Cbio <- function(download_all) {
   
   print("Les fichiers ont été extraits dans data/studies_data")
 }
-
-
